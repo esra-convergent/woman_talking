@@ -1,0 +1,62 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+python_agent/.venv/
+python_agent/venv/
+
+# Build output
+dist/
+build/
+
+# Environment variables - NEVER COMMIT!
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+python_agent/.env.local
+python_agent/.env
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+
+# Temporary
+*.tmp
+.cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.pytest_cache/
+
+# MuseTalk service (if you have it)
+musetalk_service/venv/
+musetalk_service/MuseTalk/
+musetalk_service/*.pth
+
+# Large video files - DON'T COMMIT THESE!
+public/emotions/*.mp4
+*.mp4
+*.avi
+*.mov
+
+# Keep one example emotion video for README
+!public/emotions/README.md
