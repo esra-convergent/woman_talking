@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Room, RoomEvent, RemoteParticipant, RemoteTrack, RemoteTrackPublication, Track, LocalParticipant } from 'livekit-client';
 
-interface VoiceAgentProps {
+interface VoiceAgentCrossfadeProps {
   serverUrl: string;
   token: string;
 }
@@ -15,10 +15,10 @@ interface EmotionData {
   confidence: number;
 }
 
-export function VoiceAgent({
+export function VoiceAgentCrossfade({
   serverUrl,
   token
-}: VoiceAgentProps) {
+}: VoiceAgentCrossfadeProps) {
   const [room] = useState(() => new Room());
   const [isConnected, setIsConnected] = useState(false);
   const [isAgentJoined, setIsAgentJoined] = useState(false);
@@ -26,11 +26,14 @@ export function VoiceAgent({
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [currentEmotion, setCurrentEmotion] = useState<string>('neutral');
 
-  const videoRef = useRef<HTMLVideoElement>(null);
+  // Dual video layer refs for crossfade
+  const videoLayer1Ref = useRef<HTMLVideoElement>(null);
+  const videoLayer2Ref = useRef<HTMLVideoElement>(null);
+  const activeLayerRef = useRef<1 | 2>(1); // Track which layer is currently visible
+
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number>(0);
-  const pendingEmotionRef = useRef<string | null>(null);
 
   // Emotion to video mapping
   const emotionVideos: Record<string, string> = {
@@ -43,15 +46,40 @@ export function VoiceAgent({
     'thinking': '/emotions/idle.mp4', // Alias for idle
   };
 
-  // CONSTANTS: All videos have 1 second of neutral base at the start
-  const NEUTRAL_BASE_DURATION = 1.0; // First 1 second is neutral in all videos
-  const NEUTRAL_WINDOW_START = 0.0;  // Start of neutral phase
-  const NEUTRAL_WINDOW_END = 0.5;    // We'll switch during first 0.5s for best match
+  // Transition modes - Near-instant crossfade: 20ms (imperceptible to human eye)
+  const CROSSFADE_DURATION = 10; // milliseconds - effectively instant
+  const USE_INSTANT_CUT = false; // Set to true for instant cuts instead of crossfade
 
-  // Function to switch emotion using smart frame matching
+  // Preload all emotion videos on component mount
+  useEffect(() => {
+    console.log('🎬 Preloading emotion videos...');
+    const preloadPromises = Object.entries(emotionVideos).map(([emotion, url]) => {
+      return new Promise((resolve) => {
+        const video = document.createElement('video');
+        video.src = url;
+        video.preload = 'auto';
+        video.addEventListener('loadeddata', () => {
+          console.log(`✅ Preloaded: ${emotion}`);
+          resolve(null);
+        });
+        video.addEventListener('error', () => {
+          console.warn(`⚠️ Failed to preload: ${emotion}`);
+          resolve(null);
+        });
+      });
+    });
+
+    Promise.all(preloadPromises).then(() => {
+      console.log('✅ All emotion videos preloaded');
+    });
+  }, []);
+
+  // Function to switch emotion using ultra-fast crossfade with frame sync
   const switchEmotion = (newEmotion: string) => {
-    const video = videoRef.current;
-    if (!video) return;
+    const layer1 = videoLayer1Ref.current;
+    const layer2 = videoLayer2Ref.current;
+
+    if (!layer1 || !layer2) return;
 
     // Don't switch if already showing this emotion
     if (currentEmotion === newEmotion) {
@@ -59,58 +87,94 @@ export function VoiceAgent({
       return;
     }
 
-    console.log(`🎭 Queuing emotion switch: ${currentEmotion} → ${newEmotion}`);
-    pendingEmotionRef.current = newEmotion;
-  };
+    console.log(`🎭 Crossfading: ${currentEmotion} → ${newEmotion}`);
 
-  // Initialize idle video playback and monitor for neutral-phase transitions
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) {
-      console.log('Video element not ready yet');
-      return;
-    }
+    // Get the inactive layer (the one we'll fade in)
+    const activeLayer = activeLayerRef.current;
+    const inactiveLayer = activeLayer === 1 ? layer2 : layer1;
+    const activeVideo = activeLayer === 1 ? layer1 : layer2;
 
-    console.log('Setting up idle video animation');
+    // Set up the inactive layer with new emotion video
+    const newVideoUrl = emotionVideos[newEmotion] || emotionVideos['neutral'];
+    inactiveLayer.src = newVideoUrl;
 
-    // Load initial emotion video
-    video.src = emotionVideos['neutral'];
+    // FRAME SYNC: Try to match the current playback position for smoother transition
+    // If current video is at 2.3s and duration is 5s, start new video at ~2.3s too
+    const currentProgress = activeVideo.currentTime / activeVideo.duration;
 
-    // Ensure video plays on load
-    video.play().catch(err => {
-      console.error('Failed to autoplay video:', err);
-      // User interaction might be needed to play
-    });
+    // Wait for metadata to load so we can set currentTime
+    const handleLoadedMetadata = () => {
+      // Start new video at similar position in its loop
+      const syncedTime = currentProgress * inactiveLayer.duration;
+      inactiveLayer.currentTime = syncedTime;
 
-    // Monitor video playback and switch during neutral phase
-    const checkForPendingTransition = () => {
-      const pendingEmotion = pendingEmotionRef.current;
+      console.log(`⏱️ Frame sync: ${activeVideo.currentTime.toFixed(2)}s → ${syncedTime.toFixed(2)}s`);
 
-      if (pendingEmotion && video.currentTime >= NEUTRAL_WINDOW_START && video.currentTime <= NEUTRAL_WINDOW_END) {
-        console.log(`🎭 Switching at neutral frame (${video.currentTime.toFixed(2)}s): ${currentEmotion} → ${pendingEmotion}`);
+      // Start playing the new video (it's still invisible)
+      inactiveLayer.play().then(() => {
+        console.log(`✅ New video playing: ${newEmotion}`);
 
-        // Get new video URL
-        const newVideoUrl = emotionVideos[pendingEmotion] || emotionVideos['neutral'];
-
-        // Instant cut to new video at its neutral phase (start)
-        video.src = newVideoUrl;
-        video.currentTime = 0; // Start at beginning of neutral phase
-        video.play();
+        // Apply transition (instant cut or crossfade)
+        if (USE_INSTANT_CUT) {
+          // INSTANT CUT: No fade, just swap
+          if (activeLayer === 1) {
+            layer1.style.transition = 'none';
+            layer2.style.transition = 'none';
+            layer1.style.opacity = '0';
+            layer2.style.opacity = '1';
+            activeLayerRef.current = 2;
+          } else {
+            layer1.style.transition = 'none';
+            layer2.style.transition = 'none';
+            layer2.style.opacity = '0';
+            layer1.style.opacity = '1';
+            activeLayerRef.current = 1;
+          }
+        } else {
+          // ULTRA-FAST CROSSFADE
+          if (activeLayer === 1) {
+            layer1.style.opacity = '0';
+            layer2.style.opacity = '1';
+            activeLayerRef.current = 2;
+          } else {
+            layer2.style.opacity = '0';
+            layer1.style.opacity = '1';
+            activeLayerRef.current = 1;
+          }
+        }
 
         // Update state
-        setCurrentEmotion(pendingEmotion);
-        pendingEmotionRef.current = null;
-      }
+        setCurrentEmotion(newEmotion);
+
+        // After transition completes, pause the now-hidden video to save resources
+        setTimeout(() => {
+          activeVideo.pause();
+        }, CROSSFADE_DURATION);
+      }).catch(err => {
+        console.error('Failed to play new video:', err);
+      });
     };
 
-    // Check every frame (60fps) for transition opportunity
-    const monitorInterval = setInterval(checkForPendingTransition, 16); // ~60fps
+    // Listen for metadata to be loaded
+    if (inactiveLayer.readyState >= 1) {
+      // Metadata already loaded
+      handleLoadedMetadata();
+    } else {
+      inactiveLayer.addEventListener('loadedmetadata', handleLoadedMetadata, { once: true });
+    }
+  };
 
-    return () => {
-      video.pause();
-      clearInterval(monitorInterval);
-    };
-  }, [currentEmotion, emotionVideos]);
+  // Initialize first video on layer 1
+  useEffect(() => {
+    const layer1 = videoLayer1Ref.current;
+    if (!layer1) return;
+
+    console.log('Setting up initial video on layer 1');
+    layer1.src = emotionVideos['neutral'];
+    layer1.play().catch(err => {
+      console.error('Failed to autoplay initial video:', err);
+    });
+  }, []);
 
   // Connect to LiveKit room
   useEffect(() => {
@@ -119,7 +183,6 @@ export function VoiceAgent({
         console.log('Connecting to room...');
         console.log('Server URL:', serverUrl);
         console.log('Token type:', typeof token);
-        console.log('Token value:', token);
 
         if (!token || typeof token !== 'string') {
           throw new Error('Invalid token received');
@@ -131,7 +194,7 @@ export function VoiceAgent({
 
         console.log('Connected to room:', room.name);
         setIsConnected(true);
-        setError(null); // Clear any previous errors on successful connection
+        setError(null);
 
         // Enable microphone
         await room.localParticipant.setMicrophoneEnabled(true);
@@ -175,7 +238,7 @@ export function VoiceAgent({
     };
 
     room.on(RoomEvent.ParticipantConnected, handleParticipantConnected);
-    checkForAgent(); // Check immediately in case agent already joined
+    checkForAgent();
 
     return () => {
       room.off(RoomEvent.ParticipantConnected, handleParticipantConnected);
@@ -191,20 +254,17 @@ export function VoiceAgent({
       _publication: RemoteTrackPublication,
       participant: RemoteParticipant
     ) => {
-      // Only process audio from the agent
       if (track.kind !== Track.Kind.Audio) return;
       if (!participant.identity.includes('agent') && !participant.identity.includes('emotion-agent')) return;
 
       console.log('Subscribed to agent audio track');
 
-      // Get the MediaStreamTrack from the RemoteAudioTrack
       const mediaStreamTrack = track.mediaStreamTrack;
       if (!mediaStreamTrack) {
         console.error('❌ No MediaStreamTrack available');
         return;
       }
 
-      // Create MediaStream from the track
       const mediaStream = new MediaStream([mediaStreamTrack]);
       console.log('✅ MediaStream created from track');
 
@@ -223,21 +283,18 @@ export function VoiceAgent({
       const audioContext = new AudioContext();
       console.log('Audio context state:', audioContext.state);
 
-      // Resume audio context if suspended
       if (audioContext.state === 'suspended') {
         audioContext.resume().then(() => {
           console.log('✅ Audio context resumed');
         });
       }
 
-      // Create source from the MediaStream (NOT the audio element)
       const source = audioContext.createMediaStreamSource(mediaStream);
       const analyser = audioContext.createAnalyser();
 
       analyser.fftSize = 2048;
       analyser.smoothingTimeConstant = 0.8;
       source.connect(analyser);
-      // Note: We don't connect to destination because the audio element handles playback
 
       audioContextRef.current = audioContext;
       analyserRef.current = analyser;
@@ -257,12 +314,10 @@ export function VoiceAgent({
         const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
         analyserRef.current.getByteFrequencyData(dataArray);
 
-        // Check if audio is playing (volume above threshold)
         const volume = dataArray.reduce((sum, val) => sum + val, 0) / dataArray.length;
         const isCurrentlySpeaking = volume > 5;
         setIsSpeaking(isCurrentlySpeaking);
 
-        // Log volume every 60 frames to see if we're getting audio data
         if (frameCount % 60 === 0) {
           console.log('📈 Current volume:', volume.toFixed(2), 'Speaking:', isCurrentlySpeaking);
         }
@@ -287,7 +342,7 @@ export function VoiceAgent({
     };
   }, [isConnected, isAgentJoined, room]);
 
-  // Listen for emotion updates from agent via participant attributes
+  // Listen for emotion updates from agent
   useEffect(() => {
     if (!isConnected || !isAgentJoined) return;
 
@@ -295,7 +350,6 @@ export function VoiceAgent({
       changedAttributes: Record<string, string>,
       participant: RemoteParticipant | LocalParticipant
     ) => {
-      // Only process from remote agent participants
       if (participant instanceof LocalParticipant) return;
       if (!participant.identity.includes('agent') && !participant.identity.includes('emotion-agent')) return;
 
@@ -304,7 +358,7 @@ export function VoiceAgent({
           const emotionData: EmotionData = JSON.parse(changedAttributes.emotion);
           console.log('🎭 Received emotion from agent:', emotionData.emotion);
 
-          // Switch to appropriate emotion video
+          // Switch to appropriate emotion video with crossfade
           switchEmotion(emotionData.emotion.toLowerCase());
         } catch (err) {
           console.error('Failed to parse emotion data:', err);
@@ -355,7 +409,7 @@ export function VoiceAgent({
         marginBottom: '32px'
       }}>
         <div>
-          <h2 style={{ margin: 0 }}>Voice AI Agent</h2>
+          <h2 style={{ margin: 0 }}>Voice AI Agent (Crossfade)</h2>
           <p style={{ margin: '8px 0 0 0', color: '#666', fontSize: '14px' }}>
             {!isConnected ? 'Connecting...' :
              !isAgentJoined ? 'Waiting for agent...' :
@@ -389,27 +443,43 @@ export function VoiceAgent({
         justifyContent: 'center',
         alignItems: 'center',
         minHeight: '400px',
-        position: 'relative'
+        position: 'relative',
+        overflow: 'hidden'
       }}>
-        {/* Single video element - seamless emotion transitions via smart frame matching */}
+        {/* Dual video layer system for crossfade */}
         <video
-          ref={videoRef}
+          ref={videoLayer1Ref}
           loop
           muted
           playsInline
           autoPlay
           style={{
+            position: 'absolute',
             maxWidth: '100%',
             height: 'auto',
-            opacity: isAgentJoined ? 1 : 0.5,
             borderRadius: '12px',
-            position: 'relative',
+            opacity: 1,
+            transition: `opacity ${CROSSFADE_DURATION}ms ease-in-out`,
+            zIndex: 2
+          }}
+        />
+        <video
+          ref={videoLayer2Ref}
+          loop
+          muted
+          playsInline
+          style={{
+            position: 'absolute',
+            maxWidth: '100%',
+            height: 'auto',
+            borderRadius: '12px',
+            opacity: 0,
+            transition: `opacity ${CROSSFADE_DURATION}ms ease-in-out`,
             zIndex: 1
           }}
         />
 
-        {/* Emotion indicator - very subtle, only for debugging */}
-        {/* Remove this div entirely if you don't want to see emotion labels */}
+        {/* Emotion indicator */}
         <div style={{
           position: 'absolute',
           top: '10px',
@@ -422,7 +492,8 @@ export function VoiceAgent({
           fontWeight: 500,
           textTransform: 'capitalize',
           opacity: 0.5,
-          pointerEvents: 'none'
+          pointerEvents: 'none',
+          zIndex: 3
         }}>
           {currentEmotion}
         </div>
@@ -438,11 +509,53 @@ export function VoiceAgent({
             padding: '8px 16px',
             borderRadius: '20px',
             fontSize: '14px',
-            fontWeight: 600
+            fontWeight: 600,
+            zIndex: 3
           }}>
             🎤 Speaking...
           </div>
         )}
+      </div>
+
+      {/* Manual emotion test controls */}
+      <div style={{
+        marginTop: '16px',
+        padding: '16px',
+        background: '#f5f5f5',
+        borderRadius: '8px'
+      }}>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 600 }}>
+          Test Emotions (Manual Controls)
+        </h4>
+        <div style={{
+          display: 'flex',
+          gap: '8px',
+          flexWrap: 'wrap'
+        }}>
+          {['neutral', 'happy', 'sad', 'angry', 'surprised', 'idle'].map((emotion) => (
+            <button
+              key={emotion}
+              onClick={() => switchEmotion(emotion)}
+              style={{
+                padding: '8px 16px',
+                background: currentEmotion === emotion ? '#667eea' : 'white',
+                color: currentEmotion === emotion ? 'white' : '#333',
+                border: '2px solid #667eea',
+                borderRadius: '6px',
+                fontSize: '14px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                textTransform: 'capitalize',
+                transition: 'all 0.2s'
+              }}
+            >
+              {emotion}
+            </button>
+          ))}
+        </div>
+        <p style={{ margin: '12px 0 0 0', fontSize: '12px', color: '#666', fontStyle: 'italic' }}>
+          Click buttons to test {CROSSFADE_DURATION}ms crossfade transitions with frame sync
+        </p>
       </div>
 
       <div style={{
@@ -457,6 +570,7 @@ export function VoiceAgent({
           <li>Room: {isConnected ? '✅ Connected' : '⏳ Connecting...'}</li>
           <li>Agent: {isAgentJoined ? '✅ Active' : '⏳ Waiting...'}</li>
           <li>Microphone: {isConnected ? '✅ Enabled' : '⏳ Pending'}</li>
+          <li>Transition: ✅ Smooth crossfade ({CROSSFADE_DURATION}ms)</li>
         </ul>
         {isAgentJoined && (
           <p style={{ margin: '12px 0 0 0', fontStyle: 'italic' }}>

@@ -3,11 +3,13 @@ import { Room } from 'livekit-client';
 import { LiveAvatar } from './components/LiveAvatar';
 import { AvatarTest } from './components/AvatarTest';
 import { VoiceAgent } from './components/VoiceAgent';
+import { VoiceAgentWarped } from './components/VoiceAgentWarped';
+import { VoiceAgentCrossfade } from './components/VoiceAgentCrossfade';
 
-type AppMode = 'test' | 'livekit' | 'voice';
+type AppMode = 'test' | 'livekit' | 'voice' | 'voice-warped' | 'voice-crossfade';
 
 function App() {
-  const [mode, setMode] = useState<AppMode>('voice');
+  const [mode, setMode] = useState<AppMode>('voice-crossfade');
   const [room] = useState(() => new Room());
   const [isConnected, setIsConnected] = useState(false);
   const [url, setUrl] = useState('');
@@ -99,7 +101,39 @@ function App() {
               transition: 'all 0.2s'
             }}
           >
-            Voice AI
+            Voice AI (Classic)
+          </button>
+          <button
+            onClick={() => setMode('voice-crossfade')}
+            style={{
+              padding: '10px 20px',
+              background: mode === 'voice-crossfade' ? 'white' : 'rgba(255,255,255,0.2)',
+              color: mode === 'voice-crossfade' ? '#667eea' : 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            Voice AI (Crossfade)
+          </button>
+          <button
+            onClick={() => setMode('voice-warped')}
+            style={{
+              padding: '10px 20px',
+              background: mode === 'voice-warped' ? 'white' : 'rgba(255,255,255,0.2)',
+              color: mode === 'voice-warped' ? '#667eea' : 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            Voice AI (Warped)
           </button>
           <button
             onClick={() => setMode('test')}
@@ -145,12 +179,24 @@ function App() {
           Woman Talks - Live Avatar
         </h1>
 
-        {mode === 'voice' ? (
+        {mode === 'voice' || mode === 'voice-warped' || mode === 'voice-crossfade' ? (
           voiceToken ? (
-            <VoiceAgent
-              serverUrl={voiceUrl}
-              token={voiceToken}
-            />
+            mode === 'voice' ? (
+              <VoiceAgent
+                serverUrl={voiceUrl}
+                token={voiceToken}
+              />
+            ) : mode === 'voice-crossfade' ? (
+              <VoiceAgentCrossfade
+                serverUrl={voiceUrl}
+                token={voiceToken}
+              />
+            ) : (
+              <VoiceAgentWarped
+                serverUrl={voiceUrl}
+                token={voiceToken}
+              />
+            )
           ) : (
             <div style={{
               background: 'white',
@@ -160,9 +206,15 @@ function App() {
               maxWidth: '500px',
               margin: '0 auto'
             }}>
-              <h2 style={{ marginTop: 0, marginBottom: '24px' }}>Voice AI Agent</h2>
+              <h2 style={{ marginTop: 0, marginBottom: '24px' }}>
+                Voice AI Agent {mode === 'voice-warped' ? '(Landmark Warping)' : mode === 'voice-crossfade' ? '(Smooth Crossfade)' : ''}
+              </h2>
               <p style={{ marginBottom: '24px', color: '#666' }}>
-                Talk to an AI assistant with real-time voice conversation and animated avatar.
+                {mode === 'voice-warped'
+                  ? 'Experience seamless emotion transitions using real-time facial landmark warping technology.'
+                  : mode === 'voice-crossfade'
+                  ? 'Seamless emotion transitions with smooth video crossfading for a natural, flowing experience.'
+                  : 'Talk to an AI assistant with real-time voice conversation and animated avatar.'}
               </p>
 
               <button
@@ -198,6 +250,12 @@ function App() {
                   <li>Token server running on port 3001</li>
                   <li>Python agent running and connected to LiveKit</li>
                   <li>Microphone access enabled</li>
+                  {mode === 'voice-warped' && (
+                    <li>First load may take 10-20 seconds to analyze emotion videos</li>
+                  )}
+                  {mode === 'voice-crossfade' && (
+                    <li>Videos will be preloaded for instant smooth transitions</li>
+                  )}
                 </ul>
               </div>
             </div>
