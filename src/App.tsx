@@ -1,37 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Room } from 'livekit-client';
-import { LiveAvatar } from './components/LiveAvatar';
-import { AvatarTest } from './components/AvatarTest';
-import { VoiceAgent } from './components/VoiceAgent';
-import { VoiceAgentWarped } from './components/VoiceAgentWarped';
-import { VoiceAgentCrossfade } from './components/VoiceAgentCrossfade';
-
-type AppMode = 'test' | 'livekit' | 'voice' | 'voice-warped' | 'voice-crossfade';
+import { AvatarStudio } from './components/AvatarStudio';
 
 function App() {
-  const [mode, setMode] = useState<AppMode>('voice-crossfade');
   const [room] = useState(() => new Room());
-  const [isConnected, setIsConnected] = useState(false);
-  const [url, setUrl] = useState('');
-  const [token, setToken] = useState('');
   const [voiceUrl, setVoiceUrl] = useState('');
   const [voiceToken, setVoiceToken] = useState('');
   const [isConnectingVoice, setIsConnectingVoice] = useState(false);
-
-  const handleConnect = async () => {
-    try {
-      await room.connect(url, token);
-      setIsConnected(true);
-    } catch (err) {
-      console.error('Failed to connect:', err);
-      alert('Failed to connect to room');
-    }
-  };
-
-  const handleDisconnect = () => {
-    room.disconnect();
-    setIsConnected(false);
-  };
 
   const handleVoiceConnect = async () => {
     setIsConnectingVoice(true);
@@ -53,8 +28,6 @@ function App() {
 
       const data = await response.json();
       console.log('Server response:', data);
-      console.log('Token from server:', data.token);
-      console.log('Token type:', typeof data.token);
       setVoiceUrl(data.url);
       setVoiceToken(data.token);
     } catch (err) {
@@ -73,360 +46,80 @@ function App() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      padding: '40px 20px',
-      fontFamily: 'system-ui, -apple-system, sans-serif'
+      background: '#ffffff',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
     }}>
-      <div style={{
-        maxWidth: '1200px',
-        margin: '0 auto'
-      }}>
+      {voiceToken ? (
+        <AvatarStudio
+          serverUrl={voiceUrl}
+          token={voiceToken}
+        />
+      ) : (
         <div style={{
+          height: '100vh',
           display: 'flex',
+          alignItems: 'center',
           justifyContent: 'center',
-          gap: '12px',
-          marginBottom: '32px'
+          background: '#ffffff'
         }}>
-          <button
-            onClick={() => setMode('voice')}
-            style={{
-              padding: '10px 20px',
-              background: mode === 'voice' ? 'white' : 'rgba(255,255,255,0.2)',
-              color: mode === 'voice' ? '#667eea' : 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '14px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-          >
-            Voice AI (Classic)
-          </button>
-          <button
-            onClick={() => setMode('voice-crossfade')}
-            style={{
-              padding: '10px 20px',
-              background: mode === 'voice-crossfade' ? 'white' : 'rgba(255,255,255,0.2)',
-              color: mode === 'voice-crossfade' ? '#667eea' : 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '14px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-          >
-            Voice AI (Crossfade)
-          </button>
-          <button
-            onClick={() => setMode('voice-warped')}
-            style={{
-              padding: '10px 20px',
-              background: mode === 'voice-warped' ? 'white' : 'rgba(255,255,255,0.2)',
-              color: mode === 'voice-warped' ? '#667eea' : 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '14px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-          >
-            Voice AI (Warped)
-          </button>
-          <button
-            onClick={() => setMode('test')}
-            style={{
-              padding: '10px 20px',
-              background: mode === 'test' ? 'white' : 'rgba(255,255,255,0.2)',
-              color: mode === 'test' ? '#667eea' : 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '14px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-          >
-            Test Mode
-          </button>
-          <button
-            onClick={() => setMode('livekit')}
-            style={{
-              padding: '10px 20px',
-              background: mode === 'livekit' ? 'white' : 'rgba(255,255,255,0.2)',
-              color: mode === 'livekit' ? '#667eea' : 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '14px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-          >
-            LiveKit Mode
-          </button>
-        </div>
-
-        <h1 style={{
-          color: 'white',
-          textAlign: 'center',
-          marginBottom: '40px',
-          fontSize: '3em',
-          textShadow: '2px 2px 4px rgba(0,0,0,0.3)'
-        }}>
-          Woman Talks - Live Avatar
-        </h1>
-
-        {mode === 'voice' || mode === 'voice-warped' || mode === 'voice-crossfade' ? (
-          voiceToken ? (
-            mode === 'voice' ? (
-              <VoiceAgent
-                serverUrl={voiceUrl}
-                token={voiceToken}
-              />
-            ) : mode === 'voice-crossfade' ? (
-              <VoiceAgentCrossfade
-                serverUrl={voiceUrl}
-                token={voiceToken}
-              />
-            ) : (
-              <VoiceAgentWarped
-                serverUrl={voiceUrl}
-                token={voiceToken}
-              />
-            )
-          ) : (
-            <div style={{
-              background: 'white',
-              borderRadius: '16px',
-              padding: '40px',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-              maxWidth: '500px',
-              margin: '0 auto'
-            }}>
-              <h2 style={{ marginTop: 0, marginBottom: '24px' }}>
-                Voice AI Agent {mode === 'voice-warped' ? '(Landmark Warping)' : mode === 'voice-crossfade' ? '(Smooth Crossfade)' : ''}
-              </h2>
-              <p style={{ marginBottom: '24px', color: '#666' }}>
-                {mode === 'voice-warped'
-                  ? 'Experience seamless emotion transitions using real-time facial landmark warping technology.'
-                  : mode === 'voice-crossfade'
-                  ? 'Seamless emotion transitions with smooth video crossfading for a natural, flowing experience.'
-                  : 'Talk to an AI assistant with real-time voice conversation and animated avatar.'}
-              </p>
-
-              <button
-                onClick={handleVoiceConnect}
-                disabled={isConnectingVoice}
-                style={{
-                  width: '100%',
-                  padding: '16px',
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '18px',
-                  fontWeight: 600,
-                  cursor: isConnectingVoice ? 'not-allowed' : 'pointer',
-                  opacity: isConnectingVoice ? 0.5 : 1,
-                  transition: 'all 0.2s',
-                }}
-              >
-                {isConnectingVoice ? 'Connecting...' : 'Start Conversation'}
-              </button>
-
-              <div style={{
-                marginTop: '24px',
-                padding: '16px',
-                background: '#f5f5f5',
-                borderRadius: '8px',
-                fontSize: '14px',
-                color: '#666'
-              }}>
-                <strong>Requirements:</strong>
-                <ul style={{ margin: '8px 0 0 0', paddingLeft: '20px' }}>
-                  <li>Token server running on port 3001</li>
-                  <li>Python agent running and connected to LiveKit</li>
-                  <li>Microphone access enabled</li>
-                  {mode === 'voice-warped' && (
-                    <li>First load may take 10-20 seconds to analyze emotion videos</li>
-                  )}
-                  {mode === 'voice-crossfade' && (
-                    <li>Videos will be preloaded for instant smooth transitions</li>
-                  )}
-                </ul>
-              </div>
-            </div>
-          )
-        ) : mode === 'test' ? (
-          <AvatarTest />
-        ) : !isConnected ? (
           <div style={{
             background: 'white',
             borderRadius: '16px',
-            padding: '40px',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-            maxWidth: '500px',
-            margin: '0 auto'
+            padding: '48px',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.1)',
+            maxWidth: '450px',
+            textAlign: 'center',
+            border: '1px solid #e0e0e0'
           }}>
-            <h2 style={{ marginTop: 0, marginBottom: '24px' }}>Connect to LiveKit</h2>
-
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>
-                Server URL
-              </label>
-              <input
-                type="text"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="wss://your-livekit-server.com"
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  border: '2px solid #e0e0e0',
-                  borderRadius: '8px',
-                  fontSize: '16px',
-                  boxSizing: 'border-box'
-                }}
-              />
-            </div>
-
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>
-                Access Token
-              </label>
-              <input
-                type="text"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder="Your LiveKit token"
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  border: '2px solid #e0e0e0',
-                  borderRadius: '8px',
-                  fontSize: '16px',
-                  boxSizing: 'border-box'
-                }}
-              />
-            </div>
+            <h2 style={{
+              marginTop: 0,
+              marginBottom: '16px',
+              fontSize: '24px',
+              fontWeight: 600,
+              color: '#1a1a1a'
+            }}>
+              Start Video Call
+            </h2>
+            <p style={{
+              marginBottom: '32px',
+              color: '#666',
+              fontSize: '15px',
+              lineHeight: '1.5'
+            }}>
+              Connect with an AI-powered avatar for an interactive conversation experience.
+            </p>
 
             <button
-              onClick={handleConnect}
-              disabled={!url || !token}
+              onClick={handleVoiceConnect}
+              disabled={isConnectingVoice}
               style={{
                 width: '100%',
-                padding: '16px',
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                padding: '16px 32px',
+                background: isConnectingVoice ? '#ccc' : '#2d2d2d',
                 color: 'white',
                 border: 'none',
-                borderRadius: '8px',
-                fontSize: '18px',
+                borderRadius: '12px',
+                fontSize: '16px',
                 fontWeight: 600,
-                cursor: url && token ? 'pointer' : 'not-allowed',
-                opacity: url && token ? 1 : 0.5,
-                transition: 'transform 0.2s',
+                cursor: isConnectingVoice ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s',
               }}
-              onMouseDown={(e) => {
-                if (url && token) {
-                  e.currentTarget.style.transform = 'scale(0.98)';
+              onMouseEnter={(e) => {
+                if (!isConnectingVoice) {
+                  e.currentTarget.style.background = '#3d3d3d';
                 }
               }}
-              onMouseUp={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
+              onMouseLeave={(e) => {
+                if (!isConnectingVoice) {
+                  e.currentTarget.style.background = '#2d2d2d';
+                }
               }}
             >
-              Connect
+              {isConnectingVoice ? 'Connecting...' : 'Start Call'}
             </button>
-
-            <div style={{
-              marginTop: '24px',
-              padding: '16px',
-              background: '#f5f5f5',
-              borderRadius: '8px',
-              fontSize: '14px',
-              color: '#666'
-            }}>
-              <strong>Note:</strong> You need a LiveKit server and access token.
-              For testing, you can use the LiveKit Cloud or run a local server.
-            </div>
           </div>
-        ) : (
-          <div style={{
-            background: 'white',
-            borderRadius: '16px',
-            padding: '40px',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
-          }}>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '32px'
-            }}>
-              <h2 style={{ margin: 0 }}>Your Live Avatar</h2>
-              <button
-                onClick={handleDisconnect}
-                style={{
-                  padding: '12px 24px',
-                  background: '#f44336',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '16px',
-                  fontWeight: 600,
-                  cursor: 'pointer'
-                }}
-              >
-                Disconnect
-              </button>
-            </div>
-
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-              gap: '24px'
-            }}>
-              <div>
-                <h3>Your Avatar</h3>
-                <LiveAvatar
-                  room={room}
-                  enableLocalAudio={true}
-                />
-                <p style={{ marginTop: '16px', color: '#666', fontSize: '14px' }}>
-                  Speak into your microphone to animate the avatar
-                </p>
-              </div>
-
-              {room.remoteParticipants.size > 0 && (
-                <div>
-                  <h3>Remote Participants</h3>
-                  {Array.from(room.remoteParticipants.values()).map((participant) => (
-                    <div key={participant.sid} style={{ marginBottom: '24px' }}>
-                      <h4>{participant.identity}</h4>
-                      <LiveAvatar
-                        room={room}
-                        participant={participant}
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        <div style={{
-          marginTop: '40px',
-          textAlign: 'center',
-          color: 'white',
-          opacity: 0.8
-        }}>
-          <p>Built with React, TypeScript, and LiveKit</p>
         </div>
-      </div>
+      )}
     </div>
   );
 }

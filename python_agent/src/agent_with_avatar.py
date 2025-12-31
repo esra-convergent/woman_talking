@@ -103,7 +103,7 @@ async def my_agent(ctx: JobContext):
 
     @session.on("conversation_item_added")
     def on_conversation_item(event):
-        """Handle new conversation items - analyze ONLY user messages for agent's emotional reaction."""
+        """Handle new conversation items - analyze agent's responses to determine emotion."""
         message = event.item
 
         # Only process ChatMessage items with text content
@@ -112,11 +112,6 @@ async def my_agent(ctx: JobContext):
 
         role = message.role  # "user" or "assistant"
 
-        # ONLY analyze user messages - skip agent's own responses
-        if role == "assistant":
-            logger.debug(f"⏭️  Skipping agent's own message")
-            return
-
         # Extract transcript
         content = message.content
         if isinstance(content, list):
@@ -124,12 +119,13 @@ async def my_agent(ctx: JobContext):
         else:
             transcript = str(content)
 
-        logger.info(f"🎭 USER said: {transcript[:50]}")
+        logger.info(f"🎭 {'USER' if role == 'user' else 'AGENT'} said: {transcript[:50]}")
 
-        if transcript.strip():
+        # ANALYZE AGENT'S RESPONSES - this is what we want to show emotion for
+        if role == "assistant" and transcript.strip():
             emotion = analyze_emotion(transcript)
-            logger.info(f"🎭 Agent's REACTION emotion: {emotion}")
-            # Send emotion as 'agent' source
+            logger.info(f"🎭 Agent's emotion (from response): {emotion}")
+            # Send emotion as 'agent' source with AGENT'S text
             asyncio.create_task(send_emotion_data(ctx.room, emotion, "agent", transcript))
 
     logger.info("✅ Emotion hooks registered")

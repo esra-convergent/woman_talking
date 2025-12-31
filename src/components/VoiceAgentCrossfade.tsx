@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Room, RoomEvent, RemoteParticipant, RemoteTrack, RemoteTrackPublication, Track, LocalParticipant } from 'livekit-client';
+import { EmotionAnalyzer } from '../lib/emotionAnalyzer';
 
 interface VoiceAgentCrossfadeProps {
   serverUrl: string;
@@ -25,6 +26,8 @@ export function VoiceAgentCrossfade({
   const [error, setError] = useState<string | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [currentEmotion, setCurrentEmotion] = useState<string>('neutral');
+  const [mlModelReady, setMlModelReady] = useState(false);
+  const [detectedEmotions, setDetectedEmotions] = useState<string>('');
 
   // Dual video layer refs for crossfade
   const videoLayer1Ref = useRef<HTMLVideoElement>(null);
@@ -34,6 +37,9 @@ export function VoiceAgentCrossfade({
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number>(0);
+
+  // ML emotion analyzer
+  const emotionAnalyzerRef = useRef<EmotionAnalyzer | null>(null);
 
   // Emotion to video mapping
   const emotionVideos: Record<string, string> = {
@@ -49,6 +55,25 @@ export function VoiceAgentCrossfade({
   // Transition modes - Near-instant crossfade: 20ms (imperceptible to human eye)
   const CROSSFADE_DURATION = 10; // milliseconds - effectively instant
   const USE_INSTANT_CUT = false; // Set to true for instant cuts instead of crossfade
+
+  // Initialize ML emotion analyzer
+  useEffect(() => {
+    const initAnalyzer = async () => {
+      console.log('🤖 Initializing ML emotion analyzer...');
+      const analyzer = new EmotionAnalyzer();
+      emotionAnalyzerRef.current = analyzer;
+
+      try {
+        await analyzer.initialize();
+        setMlModelReady(true);
+        console.log('✅ ML emotion analyzer ready');
+      } catch (err) {
+        console.error('❌ Failed to initialize ML analyzer:', err);
+      }
+    };
+
+    initAnalyzer();
+  }, []);
 
   // Preload all emotion videos on component mount
   useEffect(() => {
@@ -342,11 +367,11 @@ export function VoiceAgentCrossfade({
     };
   }, [isConnected, isAgentJoined, room]);
 
-  // Listen for emotion updates from agent
+  // Listen for emotion updates from agent and analyze with ML
   useEffect(() => {
     if (!isConnected || !isAgentJoined) return;
 
-    const handleAttributesChanged = (
+    const handleAttributesChanged = async (
       changedAttributes: Record<string, string>,
       participant: RemoteParticipant | LocalParticipant
     ) => {
@@ -356,10 +381,34 @@ export function VoiceAgentCrossfade({
       if (changedAttributes.emotion) {
         try {
           const emotionData: EmotionData = JSON.parse(changedAttributes.emotion);
-          console.log('🎭 Received emotion from agent:', emotionData.emotion);
+          console.log('🎭 Received emotion from agent:', emotionData);
 
-          // Switch to appropriate emotion video with crossfade
-          switchEmotion(emotionData.emotion.toLowerCase());
+          // If we have the ML analyzer ready, use it to analyze the text
+          if (emotionAnalyzerRef.current && mlModelReady && emotionData.text) {
+            console.log('🤖 Analyzing agent text with ML:', emotionData.text);
+
+            const result = await emotionAnalyzerRef.current.analyzeWithContext(emotionData.text);
+            console.log('📊 ML Analysis Result:', result);
+
+            // Display detected emotions for debugging
+            const emotionScores = result.emotions
+              .filter(e => e.score > 0.1)
+              .map(e => `${e.emotion}(${(e.score * 100).toFixed(0)}%)`)
+              .join(', ');
+            setDetectedEmotions(emotionScores);
+
+            // Get the best emotion to display
+            const bestEmotion = result.shouldBlend && result.blendEmotions
+              ? result.dominantEmotion // For now, use dominant until we implement blending
+              : result.dominantEmotion;
+
+            console.log(`🎨 Switching to emotion: ${bestEmotion} (confidence: ${(result.confidence * 100).toFixed(0)}%)`);
+            switchEmotion(bestEmotion);
+          } else {
+            // Fallback to emotion from agent if ML not ready
+            console.log('⚠️ ML not ready, using agent emotion:', emotionData.emotion);
+            switchEmotion(emotionData.emotion.toLowerCase());
+          }
         } catch (err) {
           console.error('Failed to parse emotion data:', err);
         }
@@ -371,7 +420,7 @@ export function VoiceAgentCrossfade({
     return () => {
       room.off(RoomEvent.ParticipantAttributesChanged, handleAttributesChanged);
     };
-  }, [isConnected, isAgentJoined, room]);
+  }, [isConnected, isAgentJoined, room, mlModelReady]);
 
   const handleDisconnect = () => {
     room.disconnect();
@@ -517,6 +566,81 @@ export function VoiceAgentCrossfade({
         )}
       </div>
 
+      {/* ML Emotion Detection Status */}
+      {mlModelReady && detectedEmotions && (
+        <div style={{
+          marginTop: '16px',
+          padding: '12px 16px',
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          borderRadius: '8px',
+          color: 'white'
+        }}>
+          <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '4px' }}>
+            🤖 ML Emotion Detection
+          </div>
+          <div style={{ fontSize: '14px', fontWeight: 600 }}>
+            {detectedEmotions}
+          </div>
+        </div>
+      )}
+
+      {/* ML Emotion Testing with Sample Phrases */}
+      {mlModelReady && (
+        <div style={{
+          marginTop: '16px',
+          padding: '16px',
+          background: '#f0f4ff',
+          borderRadius: '8px',
+          border: '2px solid #667eea'
+        }}>
+          <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 600, color: '#667eea' }}>
+            🤖 Test ML Emotion Detection
+          </h4>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {[
+              { text: "I'm so happy to see you! This is wonderful!", label: "Happy Test" },
+              { text: "I'm really angry about this situation. This is unacceptable!", label: "Angry Test" },
+              { text: "I feel so sad and disappointed right now...", label: "Sad Test" },
+              { text: "Wow! I can't believe this is happening! Amazing!", label: "Surprised Test" },
+              { text: "Let me explain how this works. Here are the facts.", label: "Neutral Test" }
+            ].map(({ text, label }) => (
+              <button
+                key={label}
+                onClick={async () => {
+                  if (emotionAnalyzerRef.current) {
+                    console.log('🧪 Testing ML with:', text);
+                    const result = await emotionAnalyzerRef.current.analyzeText(text);
+                    const emotionScores = result.emotions
+                      .filter(e => e.score > 0.05)
+                      .map(e => `${e.emotion}(${(e.score * 100).toFixed(0)}%)`)
+                      .join(', ');
+                    setDetectedEmotions(emotionScores);
+                    switchEmotion(result.dominantEmotion);
+                  }
+                }}
+                style={{
+                  padding: '10px 12px',
+                  background: 'white',
+                  border: '1px solid #667eea',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9ff'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+              >
+                <strong>{label}:</strong> <span style={{ color: '#666' }}>"{text}"</span>
+              </button>
+            ))}
+          </div>
+          <p style={{ margin: '12px 0 0 0', fontSize: '11px', color: '#667eea', fontStyle: 'italic' }}>
+            Click phrases to test ML-based emotion detection
+          </p>
+        </div>
+      )}
+
       {/* Manual emotion test controls */}
       <div style={{
         marginTop: '16px',
@@ -525,7 +649,7 @@ export function VoiceAgentCrossfade({
         borderRadius: '8px'
       }}>
         <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 600 }}>
-          Test Emotions (Manual Controls)
+          Manual Emotion Controls
         </h4>
         <div style={{
           display: 'flex',
@@ -554,7 +678,7 @@ export function VoiceAgentCrossfade({
           ))}
         </div>
         <p style={{ margin: '12px 0 0 0', fontSize: '12px', color: '#666', fontStyle: 'italic' }}>
-          Click buttons to test {CROSSFADE_DURATION}ms crossfade transitions with frame sync
+          Direct emotion switching ({CROSSFADE_DURATION}ms crossfade)
         </p>
       </div>
 
